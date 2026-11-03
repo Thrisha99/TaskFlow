@@ -7,13 +7,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.taskflow.dto.TaskRequestDTO;
 import com.taskflow.dto.TaskResponseDTO;
-import com.taskflow.entity.Task;
-import com.taskflow.mapper.TaskMapper;
 import com.taskflow.service.TaskService;
 
 import jakarta.validation.Valid;
@@ -28,11 +26,13 @@ private final TaskService taskService;
     this.taskService = taskService;
 }
 @PostMapping
+@ResponseStatus(HttpStatus.CREATED)
 public TaskResponseDTO createTask(
         @Valid @RequestBody TaskRequestDTO taskRequestDTO) {
 
     return taskService.createTask(taskRequestDTO);
 }
+
  @GetMapping
 public java.util.List<TaskResponseDTO> getAllTasks() {
     return taskService.getAllTasks();
@@ -53,6 +53,7 @@ public TaskResponseDTO updateTask(
 }
 
 @DeleteMapping("/{id}")
+@ResponseStatus(HttpStatus.NO_CONTENT)
 public void deleteTask(@PathVariable Long id) {
     taskService.deleteTask(id);
 }
