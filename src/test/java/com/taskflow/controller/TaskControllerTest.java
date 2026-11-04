@@ -1,24 +1,21 @@
+
 package com.taskflow.controller;
 
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.taskflow.dto.TaskRequestDTO;
@@ -26,6 +23,21 @@ import com.taskflow.dto.TaskResponseDTO;
 import com.taskflow.entity.TaskPriority;
 import com.taskflow.entity.TaskStatus;
 import com.taskflow.service.TaskService;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(TaskController.class)
 class TaskControllerTest {
@@ -35,259 +47,558 @@ class TaskControllerTest {
 
     @MockitoBean
     private TaskService taskService;
+
+    // ==========================================
+    // HELPER METHODS
+    // ==========================================
+
+    private TaskResponseDTO createResponse(
+            Long id,
+            String title,
+            TaskStatus taskStatus,
+            TaskPriority priority) {
+
+        TaskResponseDTO task = new TaskResponseDTO();
+        task.setId(id);
+        task.setTitle(title);
+        task.setDescription("Test description");
+        task.setStatus(taskStatus);
+        task.setPriority(priority);
+
+        return task;
+    }
+
+    private Page<TaskResponseDTO> createTaskPage(
+            int page,
+            int size,
+            String sortBy,
+            String direction) {
+
+        Sort sort = direction.equalsIgnoreCase("desc")
+                ? Sort.by(sortBy).descending()
+                : Sort.by(sortBy).ascending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        List<TaskResponseDTO> tasks = List.of(
+                createResponse(
+                        1L, "Learn Java",
+                        TaskStatus.PENDING, TaskPriority.HIGH
+                ),
+                createResponse(
+                        2L, "Learn Spring Boot",
+                        TaskStatus.IN_PROGRESS, TaskPriority.MEDIUM
+                )
+        );
+
+        return new PageImpl<>(tasks, pageable, 2);
+    }
+
+    private void stubDefaultPage() {
+
+        when(taskService.getFilteredTasks(
+                isNull(),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
+        )).thenReturn(createTaskPage(0, 10, "id", "asc"));
+    }
+
+    // ==========================================
+    // CREATE TASK TESTS
+    // ==========================================
+
     @Test
-void createTask_shouldReturnCreatedTask() throws Exception {
+    void createTask_shouldReturnCreatedTask() throws Exception {
 
-    TaskResponseDTO response = new TaskResponseDTO();
-    response.setId(1L);
-    response.setTitle("Learn Spring Boot");
-    response.setDescription("Complete controller testing");
-    response.setStatus(TaskStatus.PENDING);
-    response.setPriority(TaskPriority.HIGH);
+        TaskResponseDTO response = createResponse(
+                1L, "Learn Spring Boot",
+                TaskStatus.PENDING, TaskPriority.HIGH
+        );
 
-    when(taskService.createTask(org.mockito.ArgumentMatchers.any(TaskRequestDTO.class)))
-            .thenReturn(response);
+        when(taskService.createTask(any(TaskRequestDTO.class)))
+                .thenReturn(response);
 
-    mockMvc.perform(post("/api/tasks")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "Learn Spring Boot",
-                        "description": "Complete controller testing",
-                        "status": "PENDING",
-                        "priority": "HIGH"
-                    }
-                    """))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.id").value(1))
-            .andExpect(jsonPath("$.title").value("Learn Spring Boot"))
-            .andExpect(jsonPath("$.status").value("PENDING"))
-            .andExpect(jsonPath("$.priority").value("HIGH"));
-}
-@Test
-void createTask_shouldReturnBadRequestWhenTitleIsEmpty() throws Exception {
+        mockMvc.perform(post("/api/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "Learn Spring Boot",
+                            "description": "Complete controller testing",
+                            "status": "PENDING",
+                            "priority": "HIGH"
+                        }
+                        """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.title").value("Learn Spring Boot"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.priority").value("HIGH"));
+    }
 
-    mockMvc.perform(post("/api/tasks")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "",
-                        "description": "Test description",
-                        "status": "PENDING",
-                        "priority": "HIGH"
-                    }
-                    """))
-            .andExpect(status().isBadRequest());
-            verify(taskService, never()).createTask(any(TaskRequestDTO.class));
-}
-@Test
-void createTask_shouldReturnBadRequestWhenPriorityIsMissing() throws Exception {
+    @Test
+    void createTask_shouldReturnBadRequestWhenTitleIsEmpty() throws Exception {
 
-    mockMvc.perform(post("/api/tasks")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "Learn Spring Boot",
-                        "description": "Practice testing",
-                        "status": "PENDING"
-                    }
-                    """))
-            .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "",
+                            "description": "Test description",
+                            "status": "PENDING",
+                            "priority": "HIGH"
+                        }
+                        """))
+                .andExpect(status().isBadRequest());
 
-    verify(taskService, never()).createTask(any(TaskRequestDTO.class));
-}
-@Test
-void createTask_shouldReturnBadRequestWhenPriorityIsInvalid() throws Exception {
+        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+    }
 
-    mockMvc.perform(post("/api/tasks")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "Learn Spring Boot",
-                        "description": "Practice testing",
-                        "status": "PENDING",
-                        "priority": "URGENT"
-                    }
-                    """))
-            .andExpect(status().isBadRequest());
+    @Test
+    void createTask_shouldReturnBadRequestWhenPriorityIsMissing() throws Exception {
 
-    verify(taskService, never()).createTask(any(TaskRequestDTO.class));
-}
-@Test
-void createTask_shouldReturnBadRequestWhenTitleExceedsLimit() throws Exception {
+        mockMvc.perform(post("/api/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "Learn Spring Boot",
+                            "description": "Practice testing",
+                            "status": "PENDING"
+                        }
+                        """))
+                .andExpect(status().isBadRequest());
 
-    String longTitle = "A".repeat(101);
+        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+    }
 
-    mockMvc.perform(post("/api/tasks")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "%s",
-                        "description": "Testing title length",
-                        "status": "PENDING",
-                        "priority": "HIGH"
-                    }
-                    """.formatted(longTitle)))
-            .andExpect(status().isBadRequest());
+    @Test
+    void createTask_shouldReturnBadRequestWhenPriorityIsInvalid() throws Exception {
 
-    verify(taskService, never()).createTask(any(TaskRequestDTO.class));
-}
-@Test
-void createTask_shouldReturnBadRequestWhenDescriptionExceedsLimit() throws Exception {
+        mockMvc.perform(post("/api/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "Learn Spring Boot",
+                            "description": "Practice testing",
+                            "status": "PENDING",
+                            "priority": "URGENT"
+                        }
+                        """))
+                .andExpect(status().isBadRequest());
 
-    String longDescription = "A".repeat(501);
+        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+    }
 
-    mockMvc.perform(post("/api/tasks")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "Learn Spring Boot",
-                        "description": "%s",
-                        "status": "PENDING",
-                        "priority": "HIGH"
-                    }
-                    """.formatted(longDescription)))
-            .andExpect(status().isBadRequest());
+    @Test
+    void createTask_shouldReturnBadRequestWhenTitleExceedsLimit() throws Exception {
 
-    verify(taskService, never()).createTask(any(TaskRequestDTO.class));
-}
-@Test
-void getAllTasks_shouldReturnAllTasks() throws Exception {
+        String longTitle = "A".repeat(101);
 
-    TaskResponseDTO task1 = new TaskResponseDTO();
-    task1.setId(1L);
-    task1.setTitle("Learn Java");
-    task1.setDescription("Core Java concepts");
-    task1.setStatus(TaskStatus.PENDING);
-    task1.setPriority(TaskPriority.HIGH);
+        mockMvc.perform(post("/api/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "%s",
+                            "description": "Testing title length",
+                            "status": "PENDING",
+                            "priority": "HIGH"
+                        }
+                        """.formatted(longTitle)))
+                .andExpect(status().isBadRequest());
 
-    TaskResponseDTO task2 = new TaskResponseDTO();
-    task2.setId(2L);
-    task2.setTitle("Learn Spring Boot");
-    task2.setDescription("Backend development");
-    task2.setStatus(TaskStatus.IN_PROGRESS);
-    task2.setPriority(TaskPriority.MEDIUM);
+        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+    }
 
-    when(taskService.getAllTasks()).thenReturn(List.of(task1, task2));
+    @Test
+    void createTask_shouldReturnBadRequestWhenDescriptionExceedsLimit() throws Exception {
 
-    mockMvc.perform(get("/api/tasks"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(2))
-            .andExpect(jsonPath("$[0].title").value("Learn Java"))
-            .andExpect(jsonPath("$[1].title").value("Learn Spring Boot"));
-}
-@Test
-void getTaskById_shouldReturnTaskWhenIdExists() throws Exception {
+        String longDescription = "A".repeat(501);
 
-    TaskResponseDTO task = new TaskResponseDTO();
-    task.setId(1L);
-    task.setTitle("Learn Java");
-    task.setDescription("Core Java concepts");
-    task.setStatus(TaskStatus.PENDING);
-    task.setPriority(TaskPriority.HIGH);
+        mockMvc.perform(post("/api/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "Learn Spring Boot",
+                            "description": "%s",
+                            "status": "PENDING",
+                            "priority": "HIGH"
+                        }
+                        """.formatted(longDescription)))
+                .andExpect(status().isBadRequest());
 
-    when(taskService.getTaskById(1L)).thenReturn(task);
+        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+    }
 
-    mockMvc.perform(get("/api/tasks/1"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.id").value(1))
-            .andExpect(jsonPath("$.title").value("Learn Java"))
-            .andExpect(jsonPath("$.status").value("PENDING"))
-            .andExpect(jsonPath("$.priority").value("HIGH"));
-}
-@Test
-void getTaskById_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+    // ==========================================
+    // GET ALL TASKS - PAGINATION
+    // ==========================================
 
-    when(taskService.getTaskById(9999L))
-            .thenThrow(new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Task not found"
-            ));
+    @Test
+    void getAllTasks_shouldReturnPaginatedTasks() throws Exception {
 
-    mockMvc.perform(get("/api/tasks/9999"))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.message").value("Task not found"))
-            .andExpect(jsonPath("$.status").value(404));
-}
-@Test
-void updateTask_shouldReturnUpdatedTask() throws Exception {
+        stubDefaultPage();
 
-    TaskResponseDTO response = new TaskResponseDTO();
-    response.setId(1L);
-    response.setTitle("Learn Advanced Java");
-    response.setDescription("Updated Java concepts");
-    response.setStatus(TaskStatus.IN_PROGRESS);
-    response.setPriority(TaskPriority.HIGH);
+        mockMvc.perform(get("/api/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].title").value("Learn Java"))
+                .andExpect(jsonPath("$.content[1].title").value("Learn Spring Boot"))
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.number").value(0))
+                .andExpect(jsonPath("$.size").value(10));
 
-    when(taskService.updateTask(
-            org.mockito.ArgumentMatchers.eq(1L),
-            org.mockito.ArgumentMatchers.any(TaskRequestDTO.class)
-    )).thenReturn(response);
+        verify(taskService).getFilteredTasks(
+                isNull(), isNull(), isNull(), any(Pageable.class)
+        );
+    }
 
-    mockMvc.perform(put("/api/tasks/1")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "Learn Advanced Java",
-                        "description": "Updated Java concepts",
-                        "status": "IN_PROGRESS",
-                        "priority": "HIGH"
-                    }
-                    """))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.id").value(1))
-            .andExpect(jsonPath("$.title").value("Learn Advanced Java"))
-            .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
-            .andExpect(jsonPath("$.priority").value("HIGH"));
-} 
-@Test
-void updateTask_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+    @Test
+    void getAllTasks_shouldAcceptCustomPagination() throws Exception {
 
-    when(taskService.updateTask(
-            org.mockito.ArgumentMatchers.eq(9999L),
-            org.mockito.ArgumentMatchers.any(TaskRequestDTO.class)
-    )).thenThrow(new ResponseStatusException(
-            HttpStatus.NOT_FOUND,
-            "Task not found"
-    ));
+        when(taskService.getFilteredTasks(
+                isNull(), isNull(), isNull(), any(Pageable.class)
+        )).thenReturn(createTaskPage(1, 2, "id", "asc"));
 
-    mockMvc.perform(put("/api/tasks/9999")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                    {
-                        "title": "Updated Task",
-                        "description": "Testing nonexistent task",
-                        "status": "IN_PROGRESS",
-                        "priority": "HIGH"
-                    }
-                    """))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.message").value("Task not found"))
-            .andExpect(jsonPath("$.status").value(404));
-}
-@Test
-void deleteTask_shouldReturnOkWhenTaskIsDeleted() throws Exception {
+        mockMvc.perform(get("/api/tasks")
+                .param("page", "1")
+                .param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.number").value(1))
+                .andExpect(jsonPath("$.size").value(2));
+    }
 
-    mockMvc.perform(delete("/api/tasks/1"))
-            .andExpect(status().isNoContent());
+    @Test
+    void getAllTasks_shouldReturnBadRequestForNegativePage() throws Exception {
 
-    verify(taskService).deleteTask(1L);
-}
-@Test
-void deleteTask_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+        mockMvc.perform(get("/api/tasks")
+                .param("page", "-1"))
+                .andExpect(status().isBadRequest());
 
-    org.mockito.Mockito.doThrow(
-            new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Task not found"
-            )
-    ).when(taskService).deleteTask(9999L);
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
 
-    mockMvc.perform(delete("/api/tasks/9999"))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.message").value("Task not found"))
-            .andExpect(jsonPath("$.status").value(404));
+    @Test
+    void getAllTasks_shouldReturnBadRequestForZeroSize() throws Exception {
 
-    verify(taskService).deleteTask(9999L);
-}
+        mockMvc.perform(get("/api/tasks")
+                .param("size", "0"))
+                .andExpect(status().isBadRequest());
+
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldReturnBadRequestWhenSizeExceedsLimit() throws Exception {
+
+        mockMvc.perform(get("/api/tasks")
+                .param("size", "101"))
+                .andExpect(status().isBadRequest());
+
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
+
+    // ==========================================
+    // FILTERING AND SEARCH
+    // ==========================================
+
+    @Test
+    void getAllTasks_shouldFilterByStatus() throws Exception {
+
+        when(taskService.getFilteredTasks(
+                eq(TaskStatus.PENDING),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
+        )).thenReturn(createTaskPage(0, 10, "id", "asc"));
+
+        mockMvc.perform(get("/api/tasks")
+                .param("status", "PENDING"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getFilteredTasks(
+                eq(TaskStatus.PENDING),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldFilterByPriority() throws Exception {
+
+        when(taskService.getFilteredTasks(
+                isNull(),
+                eq(TaskPriority.HIGH),
+                isNull(),
+                any(Pageable.class)
+        )).thenReturn(createTaskPage(0, 10, "id", "asc"));
+
+        mockMvc.perform(get("/api/tasks")
+                .param("priority", "HIGH"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getFilteredTasks(
+                isNull(),
+                eq(TaskPriority.HIGH),
+                isNull(),
+                any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldSearchByKeyword() throws Exception {
+
+        when(taskService.getFilteredTasks(
+                isNull(),
+                isNull(),
+                eq("Java"),
+                any(Pageable.class)
+        )).thenReturn(createTaskPage(0, 10, "id", "asc"));
+
+        mockMvc.perform(get("/api/tasks")
+                .param("keyword", "Java"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getFilteredTasks(
+                isNull(),
+                isNull(),
+                eq("Java"),
+                any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldAcceptEmptyKeyword() throws Exception {
+
+        when(taskService.getFilteredTasks(
+                isNull(),
+                isNull(),
+                eq(""),
+                any(Pageable.class)
+        )).thenReturn(createTaskPage(0, 10, "id", "asc"));
+
+        mockMvc.perform(get("/api/tasks")
+                .param("keyword", ""))
+                .andExpect(status().isOk());
+
+        verify(taskService).getFilteredTasks(
+                isNull(),
+                isNull(),
+                eq(""),
+                any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldCombineFiltersAndPagination() throws Exception {
+
+        when(taskService.getFilteredTasks(
+                eq(TaskStatus.PENDING),
+                eq(TaskPriority.HIGH),
+                eq("Java"),
+                any(Pageable.class)
+        )).thenReturn(createTaskPage(0, 2, "title", "desc"));
+
+        mockMvc.perform(get("/api/tasks")
+                .param("status", "PENDING")
+                .param("priority", "HIGH")
+                .param("keyword", "Java")
+                .param("page", "0")
+                .param("size", "2")
+                .param("sortBy", "title")
+                .param("direction", "desc"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getFilteredTasks(
+                eq(TaskStatus.PENDING),
+                eq(TaskPriority.HIGH),
+                eq("Java"),
+                any(Pageable.class)
+        );
+    }
+
+    // ==========================================
+    // INVALID QUERY PARAMETERS
+    // ==========================================
+
+    @Test
+    void getAllTasks_shouldRejectInvalidStatus() throws Exception {
+
+        mockMvc.perform(get("/api/tasks")
+                .param("status", "INVALID"))
+                .andExpect(status().isBadRequest());
+
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldRejectInvalidPriority() throws Exception {
+
+        mockMvc.perform(get("/api/tasks")
+                .param("priority", "URGENT"))
+                .andExpect(status().isBadRequest());
+
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldRejectInvalidSortField() throws Exception {
+
+        mockMvc.perform(get("/api/tasks")
+                .param("sortBy", "unknown"))
+                .andExpect(status().isBadRequest());
+
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
+
+    @Test
+    void getAllTasks_shouldRejectInvalidSortDirection() throws Exception {
+
+        mockMvc.perform(get("/api/tasks")
+                .param("direction", "xyz"))
+                .andExpect(status().isBadRequest());
+
+        verify(taskService, never()).getFilteredTasks(
+                any(), any(), any(), any(Pageable.class)
+        );
+    }
+
+    // ==========================================
+    // GET TASK BY ID
+    // ==========================================
+
+    @Test
+    void getTaskById_shouldReturnTaskWhenIdExists() throws Exception {
+
+        TaskResponseDTO task = createResponse(
+                1L, "Learn Java",
+                TaskStatus.PENDING, TaskPriority.HIGH
+        );
+
+        when(taskService.getTaskById(1L)).thenReturn(task);
+
+        mockMvc.perform(get("/api/tasks/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.title").value("Learn Java"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.priority").value("HIGH"));
+    }
+
+    @Test
+    void getTaskById_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+
+        when(taskService.getTaskById(9999L))
+                .thenThrow(new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Task not found"
+                ));
+
+        mockMvc.perform(get("/api/tasks/9999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Task not found"))
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
+    // ==========================================
+    // UPDATE TASK
+    // ==========================================
+
+    @Test
+    void updateTask_shouldReturnUpdatedTask() throws Exception {
+
+        TaskResponseDTO response = createResponse(
+                1L, "Learn Advanced Java",
+                TaskStatus.IN_PROGRESS, TaskPriority.HIGH
+        );
+
+        when(taskService.updateTask(
+                eq(1L), any(TaskRequestDTO.class)
+        )).thenReturn(response);
+
+        mockMvc.perform(put("/api/tasks/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "Learn Advanced Java",
+                            "description": "Updated Java concepts",
+                            "status": "IN_PROGRESS",
+                            "priority": "HIGH"
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.title").value("Learn Advanced Java"))
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.priority").value("HIGH"));
+    }
+
+    @Test
+    void updateTask_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+
+        when(taskService.updateTask(
+                eq(9999L), any(TaskRequestDTO.class)
+        )).thenThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Task not found"
+        ));
+
+        mockMvc.perform(put("/api/tasks/9999")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                            "title": "Updated Task",
+                            "description": "Testing nonexistent task",
+                            "status": "IN_PROGRESS",
+                            "priority": "HIGH"
+                        }
+                        """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Task not found"))
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
+    // ==========================================
+    // DELETE TASK
+    // ==========================================
+
+    @Test
+    void deleteTask_shouldReturnOkWhenTaskIsDeleted() throws Exception {
+
+        mockMvc.perform(delete("/api/tasks/1"))
+                .andExpect(status().isNoContent());
+
+        verify(taskService).deleteTask(1L);
+    }
+
+    @Test
+    void deleteTask_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+
+        org.mockito.Mockito.doThrow(
+                new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Task not found"
+                )
+        ).when(taskService).deleteTask(9999L);
+
+        mockMvc.perform(delete("/api/tasks/9999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Task not found"))
+                .andExpect(jsonPath("$.status").value(404));
+
+        verify(taskService).deleteTask(9999L);
+    }
 }
