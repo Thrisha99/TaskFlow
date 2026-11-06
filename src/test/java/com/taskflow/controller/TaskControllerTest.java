@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,6 +39,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import static org.hamcrest.Matchers.nullValue;
 
 @WebMvcTest(TaskController.class)
 class TaskControllerTest {
@@ -59,6 +62,7 @@ class TaskControllerTest {
             TaskPriority priority) {
 
         TaskResponseDTO task = new TaskResponseDTO();
+
         task.setId(id);
         task.setTitle(title);
         task.setDescription("Test description");
@@ -82,12 +86,16 @@ class TaskControllerTest {
 
         List<TaskResponseDTO> tasks = List.of(
                 createResponse(
-                        1L, "Learn Java",
-                        TaskStatus.PENDING, TaskPriority.HIGH
+                        1L,
+                        "Learn Java",
+                        TaskStatus.PENDING,
+                        TaskPriority.HIGH
                 ),
                 createResponse(
-                        2L, "Learn Spring Boot",
-                        TaskStatus.IN_PROGRESS, TaskPriority.MEDIUM
+                        2L,
+                        "Learn Spring Boot",
+                        TaskStatus.IN_PROGRESS,
+                        TaskPriority.MEDIUM
                 )
         );
 
@@ -112,8 +120,10 @@ class TaskControllerTest {
     void createTask_shouldReturnCreatedTask() throws Exception {
 
         TaskResponseDTO response = createResponse(
-                1L, "Learn Spring Boot",
-                TaskStatus.PENDING, TaskPriority.HIGH
+                1L,
+                "Learn Spring Boot",
+                TaskStatus.PENDING,
+                TaskPriority.HIGH
         );
 
         when(taskService.createTask(any(TaskRequestDTO.class)))
@@ -130,14 +140,20 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.title").value("Learn Spring Boot"))
-                .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.priority").value("HIGH"));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message")
+                        .value("Task created successfully"))
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.title")
+                        .value("Learn Spring Boot"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.priority").value("HIGH"))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenTitleIsEmpty() throws Exception {
+    void createTask_shouldReturnBadRequestWhenTitleIsEmpty()
+            throws Exception {
 
         mockMvc.perform(post("/api/tasks")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -149,13 +165,18 @@ class TaskControllerTest {
                             "priority": "HIGH"
                         }
                         """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message")
+                        .value("Validation failed. Please check the provided fields."))
+                .andExpect(jsonPath("$.data.title").exists());
 
         verify(taskService, never()).createTask(any(TaskRequestDTO.class));
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenPriorityIsMissing() throws Exception {
+    void createTask_shouldReturnBadRequestWhenPriorityIsMissing()
+            throws Exception {
 
         mockMvc.perform(post("/api/tasks")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -166,13 +187,16 @@ class TaskControllerTest {
                             "status": "PENDING"
                         }
                         """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.data.priority").exists());
 
         verify(taskService, never()).createTask(any(TaskRequestDTO.class));
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenPriorityIsInvalid() throws Exception {
+    void createTask_shouldReturnBadRequestWhenPriorityIsInvalid()
+            throws Exception {
 
         mockMvc.perform(post("/api/tasks")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -184,13 +208,17 @@ class TaskControllerTest {
                             "priority": "URGENT"
                         }
                         """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").exists())
+                .andExpect(jsonPath("$.data").value(nullValue()));
 
         verify(taskService, never()).createTask(any(TaskRequestDTO.class));
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenTitleExceedsLimit() throws Exception {
+    void createTask_shouldReturnBadRequestWhenTitleExceedsLimit()
+            throws Exception {
 
         String longTitle = "A".repeat(101);
 
@@ -204,13 +232,16 @@ class TaskControllerTest {
                             "priority": "HIGH"
                         }
                         """.formatted(longTitle)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.data.title").exists());
 
         verify(taskService, never()).createTask(any(TaskRequestDTO.class));
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenDescriptionExceedsLimit() throws Exception {
+    void createTask_shouldReturnBadRequestWhenDescriptionExceedsLimit()
+            throws Exception {
 
         String longDescription = "A".repeat(501);
 
@@ -224,7 +255,9 @@ class TaskControllerTest {
                             "priority": "HIGH"
                         }
                         """.formatted(longDescription)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.data.description").exists());
 
         verify(taskService, never()).createTask(any(TaskRequestDTO.class));
     }
@@ -240,16 +273,27 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.length()").value(2))
-                .andExpect(jsonPath("$.content[0].title").value("Learn Java"))
-                .andExpect(jsonPath("$.content[1].title").value("Learn Spring Boot"))
-                .andExpect(jsonPath("$.totalElements").value(2))
-                .andExpect(jsonPath("$.totalPages").value(1))
-                .andExpect(jsonPath("$.number").value(0))
-                .andExpect(jsonPath("$.size").value(10));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message")
+                        .value("Tasks retrieved successfully"))
+                .andExpect(jsonPath("$.data.content.length()").value(2))
+                .andExpect(jsonPath("$.data.content[0].title")
+                        .value("Learn Java"))
+                .andExpect(jsonPath("$.data.content[1].title")
+                        .value("Learn Spring Boot"))
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.totalPages").value(1))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(10))
+                .andExpect(jsonPath("$.data.first").value(true))
+                .andExpect(jsonPath("$.data.last").value(true))
+                .andExpect(jsonPath("$.data.empty").value(false));
 
         verify(taskService).getFilteredTasks(
-                isNull(), isNull(), isNull(), any(Pageable.class)
+                isNull(),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
         );
     }
 
@@ -257,50 +301,72 @@ class TaskControllerTest {
     void getAllTasks_shouldAcceptCustomPagination() throws Exception {
 
         when(taskService.getFilteredTasks(
-                isNull(), isNull(), isNull(), any(Pageable.class)
+                isNull(),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
         )).thenReturn(createTaskPage(1, 2, "id", "asc"));
 
         mockMvc.perform(get("/api/tasks")
                 .param("page", "1")
                 .param("size", "2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.number").value(1))
-                .andExpect(jsonPath("$.size").value(2));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.size").value(2));
     }
 
     @Test
-    void getAllTasks_shouldReturnBadRequestForNegativePage() throws Exception {
+    void getAllTasks_shouldReturnBadRequestForNegativePage()
+            throws Exception {
 
         mockMvc.perform(get("/api/tasks")
                 .param("page", "-1"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message")
+                        .value("Page number cannot be negative"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
     @Test
-    void getAllTasks_shouldReturnBadRequestForZeroSize() throws Exception {
+    void getAllTasks_shouldReturnBadRequestForZeroSize()
+            throws Exception {
 
         mockMvc.perform(get("/api/tasks")
                 .param("size", "0"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
     @Test
-    void getAllTasks_shouldReturnBadRequestWhenSizeExceedsLimit() throws Exception {
+    void getAllTasks_shouldReturnBadRequestWhenSizeExceedsLimit()
+            throws Exception {
 
         mockMvc.perform(get("/api/tasks")
                 .param("size", "101"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
@@ -320,7 +386,8 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("status", "PENDING"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
                 eq(TaskStatus.PENDING),
@@ -342,7 +409,8 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("priority", "HIGH"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
                 isNull(),
@@ -364,7 +432,8 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("keyword", "Java"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
                 isNull(),
@@ -386,7 +455,8 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("keyword", ""))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
                 isNull(),
@@ -397,7 +467,8 @@ class TaskControllerTest {
     }
 
     @Test
-    void getAllTasks_shouldCombineFiltersAndPagination() throws Exception {
+    void getAllTasks_shouldCombineFiltersAndPagination()
+            throws Exception {
 
         when(taskService.getFilteredTasks(
                 eq(TaskStatus.PENDING),
@@ -414,7 +485,8 @@ class TaskControllerTest {
                 .param("size", "2")
                 .param("sortBy", "title")
                 .param("direction", "desc"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
                 eq(TaskStatus.PENDING),
@@ -433,10 +505,15 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("status", "INVALID"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").exists());
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
@@ -445,10 +522,15 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("priority", "URGENT"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").exists());
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
@@ -457,22 +539,31 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks")
                 .param("sortBy", "unknown"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
     @Test
-    void getAllTasks_shouldRejectInvalidSortDirection() throws Exception {
+    void getAllTasks_shouldRejectInvalidSortDirection()
+            throws Exception {
 
         mockMvc.perform(get("/api/tasks")
                 .param("direction", "xyz"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(), any(), any(), any(Pageable.class)
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
@@ -484,22 +575,26 @@ class TaskControllerTest {
     void getTaskById_shouldReturnTaskWhenIdExists() throws Exception {
 
         TaskResponseDTO task = createResponse(
-                1L, "Learn Java",
-                TaskStatus.PENDING, TaskPriority.HIGH
+                1L,
+                "Learn Java",
+                TaskStatus.PENDING,
+                TaskPriority.HIGH
         );
 
         when(taskService.getTaskById(1L)).thenReturn(task);
 
         mockMvc.perform(get("/api/tasks/1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.title").value("Learn Java"))
-                .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.priority").value("HIGH"));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.title").value("Learn Java"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.priority").value("HIGH"));
     }
 
     @Test
-    void getTaskById_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+    void getTaskById_shouldReturnNotFoundWhenTaskDoesNotExist()
+            throws Exception {
 
         when(taskService.getTaskById(9999L))
                 .thenThrow(new ResponseStatusException(
@@ -509,8 +604,10 @@ class TaskControllerTest {
 
         mockMvc.perform(get("/api/tasks/9999"))
                 .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").value("Task not found"))
-                .andExpect(jsonPath("$.status").value(404));
+                .andExpect(jsonPath("$.data").value(nullValue()))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
 
     // ==========================================
@@ -521,12 +618,15 @@ class TaskControllerTest {
     void updateTask_shouldReturnUpdatedTask() throws Exception {
 
         TaskResponseDTO response = createResponse(
-                1L, "Learn Advanced Java",
-                TaskStatus.IN_PROGRESS, TaskPriority.HIGH
+                1L,
+                "Learn Advanced Java",
+                TaskStatus.IN_PROGRESS,
+                TaskPriority.HIGH
         );
 
         when(taskService.updateTask(
-                eq(1L), any(TaskRequestDTO.class)
+                eq(1L),
+                any(TaskRequestDTO.class)
         )).thenReturn(response);
 
         mockMvc.perform(put("/api/tasks/1")
@@ -540,17 +640,21 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.title").value("Learn Advanced Java"))
-                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.priority").value("HIGH"));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.title")
+                        .value("Learn Advanced Java"))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.priority").value("HIGH"));
     }
 
     @Test
-    void updateTask_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+    void updateTask_shouldReturnNotFoundWhenTaskDoesNotExist()
+            throws Exception {
 
         when(taskService.updateTask(
-                eq(9999L), any(TaskRequestDTO.class)
+                eq(9999L),
+                any(TaskRequestDTO.class)
         )).thenThrow(new ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "Task not found"
@@ -567,8 +671,9 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").value("Task not found"))
-                .andExpect(jsonPath("$.status").value(404));
+                .andExpect(jsonPath("$.data").value(nullValue()));
     }
 
     // ==========================================
@@ -576,18 +681,25 @@ class TaskControllerTest {
     // ==========================================
 
     @Test
-    void deleteTask_shouldReturnOkWhenTaskIsDeleted() throws Exception {
+    void deleteTask_shouldReturnOkWhenTaskIsDeleted()
+            throws Exception {
 
         mockMvc.perform(delete("/api/tasks/1"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message")
+                        .value("Task deleted successfully"))
+                .andExpect(jsonPath("$.data").value(nullValue()))
+                .andExpect(jsonPath("$.timestamp").exists());
 
         verify(taskService).deleteTask(1L);
     }
 
     @Test
-    void deleteTask_shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+    void deleteTask_shouldReturnNotFoundWhenTaskDoesNotExist()
+            throws Exception {
 
-        org.mockito.Mockito.doThrow(
+        doThrow(
                 new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Task not found"
@@ -596,8 +708,9 @@ class TaskControllerTest {
 
         mockMvc.perform(delete("/api/tasks/9999"))
                 .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").value("Task not found"))
-                .andExpect(jsonPath("$.status").value(404));
+                .andExpect(jsonPath("$.data").value(nullValue()));
 
         verify(taskService).deleteTask(9999L);
     }
