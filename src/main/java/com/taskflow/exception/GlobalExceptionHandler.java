@@ -1,5 +1,4 @@
 package com.taskflow.exception;
-
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -10,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -46,6 +46,17 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(response);
     }
+    @ExceptionHandler(AuthenticationException.class)
+public ResponseEntity<ApiResponse<Object>> handleAuthenticationException(
+        AuthenticationException ex) {
+
+    return ResponseEntity
+            .status(HttpStatus.UNAUTHORIZED)
+            .body(ApiResponse.error(
+                    "Invalid email or password",
+                    null
+            ));
+}
 
     // RESPONSE STATUS EXCEPTIONS
     @ExceptionHandler(ResponseStatusException.class)
@@ -128,4 +139,11 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(response);
     }
+    @ExceptionHandler(IllegalArgumentException.class)
+public ResponseEntity<ApiResponse<Object>> handleIllegalArgument(
+        IllegalArgumentException ex) {
+
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(ApiResponse.error(ex.getMessage(), null));
+}
 }
