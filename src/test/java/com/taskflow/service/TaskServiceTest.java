@@ -20,14 +20,17 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.taskflow.repository.TaskRepository;
 import com.taskflow.dto.TaskRequestDTO;
 import com.taskflow.dto.TaskResponseDTO;
 import com.taskflow.entity.Task;
-import com.taskflow.entity.TaskStatus;
 import com.taskflow.entity.TaskPriority;
+import com.taskflow.entity.TaskStatus;
+import com.taskflow.entity.User;
+import com.taskflow.repository.TaskRepository;
+import com.taskflow.repository.UserRepository;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,6 +41,9 @@ class TaskServiceTest {
     @Mock
     private TaskRepository taskRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     @InjectMocks
     private TaskService taskService;
 
@@ -47,6 +53,14 @@ class TaskServiceTest {
 
     @Test
     void createTask_shouldReturnSavedTask() {
+
+        Long userId = 1L;
+
+        User user = new User();
+        user.setId(userId);
+        user.setName("Test User");
+        user.setEmail("test@example.com");
+        user.setPassword("encodedPassword");
 
         TaskRequestDTO request = new TaskRequestDTO();
         request.setTitle("Learn Unit Testing");
@@ -60,11 +74,16 @@ class TaskServiceTest {
         savedTask.setDescription("Practice JUnit and Mockito");
         savedTask.setStatus(TaskStatus.PENDING);
         savedTask.setPriority(TaskPriority.HIGH);
+        savedTask.setUser(user);
+
+        when(userRepository.findById(userId))
+                .thenReturn(Optional.of(user));
 
         when(taskRepository.save(any(Task.class)))
                 .thenReturn(savedTask);
 
-        TaskResponseDTO response = taskService.createTask(request);
+        TaskResponseDTO response =
+                taskService.createTask(request, userId);
 
         assertNotNull(response);
         assertEquals(1L, response.getId());
@@ -72,7 +91,12 @@ class TaskServiceTest {
         assertEquals(TaskStatus.PENDING, response.getStatus());
         assertEquals(TaskPriority.HIGH, response.getPriority());
 
-        verify(taskRepository).save(any(Task.class));
+        verify(userRepository).findById(userId);
+
+        verify(taskRepository).save(argThat(task ->
+                task.getUser() != null &&
+                task.getUser().getId().equals(userId)
+        ));
     }
 
     // ==========================================
@@ -107,12 +131,14 @@ class TaskServiceTest {
 
         Page<TaskResponseDTO> response =
                 taskService.getFilteredTasks(
-                        null, null, null, pageable
+                        1L, null, null, null, pageable
                 );
 
         assertEquals(2, response.getContent().size());
-        assertEquals("Learn Java", response.getContent().get(0).getTitle());
-        assertEquals("Practice DSA", response.getContent().get(1).getTitle());
+        assertEquals("Learn Java",
+                response.getContent().get(0).getTitle());
+        assertEquals("Practice DSA",
+                response.getContent().get(1).getTitle());
         assertEquals(2, response.getTotalElements());
         assertEquals(1, response.getTotalPages());
         assertEquals(0, response.getNumber());
@@ -138,13 +164,14 @@ class TaskServiceTest {
 
         Page<TaskResponseDTO> response =
                 taskService.getFilteredTasks(
+                        1L,
                         TaskStatus.COMPLETED,
                         TaskPriority.HIGH,
                         "Unknown",
                         pageable
                 );
 
-        assertTrue(response.isEmpty());
+        assertEquals(0, response.getContent().size());
         assertEquals(0, response.getTotalElements());
         assertEquals(0, response.getTotalPages());
 
@@ -177,6 +204,7 @@ class TaskServiceTest {
 
         Page<TaskResponseDTO> response =
                 taskService.getFilteredTasks(
+                        1L,
                         TaskStatus.PENDING,
                         TaskPriority.HIGH,
                         null,
@@ -218,7 +246,7 @@ class TaskServiceTest {
 
         Page<TaskResponseDTO> response =
                 taskService.getFilteredTasks(
-                        null, null, "Java", pageable
+                        1L, null, null, "Java", pageable
                 );
 
         assertEquals(1, response.getContent().size());
@@ -246,7 +274,7 @@ class TaskServiceTest {
 
         assertDoesNotThrow(() ->
                 taskService.getFilteredTasks(
-                        null, null, "  Java  ", pageable
+                        1L, null, null, "  Java  ", pageable
                 )
         );
 
@@ -320,7 +348,8 @@ class TaskServiceTest {
         when(taskRepository.save(any(Task.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        TaskResponseDTO response = taskService.updateTask(1L, request);
+        TaskResponseDTO response =
+                taskService.updateTask(1L, request);
 
         assertEquals("Learn Spring Boot", response.getTitle());
         assertEquals("Build REST APIs", response.getDescription());

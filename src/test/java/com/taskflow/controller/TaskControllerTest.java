@@ -16,15 +16,24 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.server.ResponseStatusException;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 
 import com.taskflow.dto.TaskRequestDTO;
 import com.taskflow.dto.TaskResponseDTO;
+import com.taskflow.entity.Role;
 import com.taskflow.entity.TaskPriority;
 import com.taskflow.entity.TaskStatus;
+import com.taskflow.entity.User;
+import com.taskflow.security.CustomUserDetails;
 import com.taskflow.service.TaskService;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -45,11 +54,74 @@ import static org.hamcrest.Matchers.nullValue;
 @WebMvcTest(TaskController.class)
 class TaskControllerTest {
 
+    private static final Long USER_ID = 1L;
+
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private TaskService taskService;
+
+    // ==========================================
+    // AUTHENTICATION HELPER
+    // ==========================================
+
+    private Authentication testAuthentication() {
+
+        User user = new User();
+        user.setId(USER_ID);
+        user.setName("Test User");
+        user.setEmail("test@example.com");
+        user.setPassword("encodedPassword");
+        user.setRole(Role.USER);
+
+        CustomUserDetails principal = new CustomUserDetails(user);
+
+        return new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                principal.getAuthorities()
+        );
+    }
+
+    private RequestPostProcessor authenticatedRequest() {
+
+        Authentication authentication = testAuthentication();
+
+        return request -> {
+            request.setUserPrincipal(authentication);
+            return request;
+        };
+    }
+
+    /*
+     * These helper methods automatically attach an authenticated
+     * principal to every MockMvc request.
+     */
+
+    private MockHttpServletRequestBuilder get(String uri) {
+        return org.springframework.test.web.servlet.request
+                .MockMvcRequestBuilders.get(uri)
+                .with(authenticatedRequest());
+    }
+
+    private MockHttpServletRequestBuilder post(String uri) {
+        return org.springframework.test.web.servlet.request
+                .MockMvcRequestBuilders.post(uri)
+                .with(authenticatedRequest());
+    }
+
+    private MockHttpServletRequestBuilder put(String uri) {
+        return org.springframework.test.web.servlet.request
+                .MockMvcRequestBuilders.put(uri)
+                .with(authenticatedRequest());
+    }
+
+    private MockHttpServletRequestBuilder delete(String uri) {
+        return org.springframework.test.web.servlet.request
+                .MockMvcRequestBuilders.delete(uri)
+                .with(authenticatedRequest());
+    }
 
     // ==========================================
     // HELPER METHODS
@@ -105,6 +177,7 @@ class TaskControllerTest {
     private void stubDefaultPage() {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 isNull(),
@@ -126,8 +199,10 @@ class TaskControllerTest {
                 TaskPriority.HIGH
         );
 
-        when(taskService.createTask(any(TaskRequestDTO.class)))
-                .thenReturn(response);
+        when(taskService.createTask(
+                any(TaskRequestDTO.class),
+                eq(USER_ID)
+        )).thenReturn(response);
 
         mockMvc.perform(post("/api/tasks")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -149,6 +224,10 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andExpect(jsonPath("$.data.priority").value("HIGH"))
                 .andExpect(jsonPath("$.timestamp").exists());
+
+        verify(taskService).createTask(
+                any(TaskRequestDTO.class), eq(USER_ID)
+        );
     }
 
     @Test
@@ -171,7 +250,9 @@ class TaskControllerTest {
                         .value("Validation failed. Please check the provided fields."))
                 .andExpect(jsonPath("$.data.title").exists());
 
-        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+        verify(taskService, never()).createTask(
+                any(TaskRequestDTO.class), any(Long.class)
+        );
     }
 
     @Test
@@ -191,7 +272,9 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.data.priority").exists());
 
-        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+        verify(taskService, never()).createTask(
+                any(TaskRequestDTO.class), any(Long.class)
+        );
     }
 
     @Test
@@ -213,7 +296,9 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.message").exists())
                 .andExpect(jsonPath("$.data").value(nullValue()));
 
-        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+        verify(taskService, never()).createTask(
+                any(TaskRequestDTO.class), any(Long.class)
+        );
     }
 
     @Test
@@ -236,7 +321,9 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.data.title").exists());
 
-        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+        verify(taskService, never()).createTask(
+                any(TaskRequestDTO.class), any(Long.class)
+        );
     }
 
     @Test
@@ -259,7 +346,9 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.data.description").exists());
 
-        verify(taskService, never()).createTask(any(TaskRequestDTO.class));
+        verify(taskService, never()).createTask(
+                any(TaskRequestDTO.class), any(Long.class)
+        );
     }
 
     // ==========================================
@@ -290,6 +379,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.empty").value(false));
 
         verify(taskService).getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 isNull(),
@@ -301,6 +391,7 @@ class TaskControllerTest {
     void getAllTasks_shouldAcceptCustomPagination() throws Exception {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 isNull(),
@@ -329,10 +420,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data").value(nullValue()));
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 
@@ -346,10 +434,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 
@@ -363,10 +448,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 
@@ -378,6 +460,7 @@ class TaskControllerTest {
     void getAllTasks_shouldFilterByStatus() throws Exception {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 eq(TaskStatus.PENDING),
                 isNull(),
                 isNull(),
@@ -390,6 +473,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
+                eq(USER_ID),
                 eq(TaskStatus.PENDING),
                 isNull(),
                 isNull(),
@@ -401,6 +485,7 @@ class TaskControllerTest {
     void getAllTasks_shouldFilterByPriority() throws Exception {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 eq(TaskPriority.HIGH),
                 isNull(),
@@ -413,6 +498,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 eq(TaskPriority.HIGH),
                 isNull(),
@@ -424,6 +510,7 @@ class TaskControllerTest {
     void getAllTasks_shouldSearchByKeyword() throws Exception {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 eq("Java"),
@@ -436,6 +523,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 eq("Java"),
@@ -447,6 +535,7 @@ class TaskControllerTest {
     void getAllTasks_shouldAcceptEmptyKeyword() throws Exception {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 eq(""),
@@ -459,6 +548,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
+                eq(USER_ID),
                 isNull(),
                 isNull(),
                 eq(""),
@@ -471,6 +561,7 @@ class TaskControllerTest {
             throws Exception {
 
         when(taskService.getFilteredTasks(
+                eq(USER_ID),
                 eq(TaskStatus.PENDING),
                 eq(TaskPriority.HIGH),
                 eq("Java"),
@@ -489,6 +580,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(taskService).getFilteredTasks(
+                eq(USER_ID),
                 eq(TaskStatus.PENDING),
                 eq(TaskPriority.HIGH),
                 eq("Java"),
@@ -510,10 +602,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.message").exists());
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 
@@ -527,10 +616,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.message").exists());
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 
@@ -543,10 +629,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 
@@ -560,10 +643,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).getFilteredTasks(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class)
+                anyLong(), any(), any(), any(), any(Pageable.class)
         );
     }
 

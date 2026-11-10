@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +28,7 @@ import com.taskflow.dto.TaskRequestDTO;
 import com.taskflow.dto.TaskResponseDTO;
 import com.taskflow.entity.TaskPriority;
 import com.taskflow.entity.TaskStatus;
+import com.taskflow.security.CustomUserDetails;
 import com.taskflow.service.TaskService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,7 +36,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-
 @RestController
 @RequestMapping("/api/tasks")
 @Tag(
@@ -44,7 +45,6 @@ import jakarta.validation.Valid;
 public class TaskController {
 
     private final TaskService taskService;
-
     public TaskController(TaskService taskService) {
         this.taskService = taskService;
     }
@@ -66,22 +66,25 @@ public class TaskController {
             description = "Invalid task details or validation failure"
         )
     })
-    public ApiResponse<TaskResponseDTO> createTask(
-            @Valid
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                description = "Task details required to create a new task",
-                required = true
-            )
-            @RequestBody TaskRequestDTO taskRequestDTO) {
+   // CREATE TASK
 
-        TaskResponseDTO createdTask =
-                taskService.createTask(taskRequestDTO);
+public ApiResponse<TaskResponseDTO> createTask(
+        @Valid @RequestBody TaskRequestDTO taskRequestDTO,
+        Authentication authentication) {
 
-        return ApiResponse.success(
-                "Task created successfully",
-                createdTask
-        );
-    }
+    CustomUserDetails userDetails =
+            (CustomUserDetails) authentication.getPrincipal();
+
+    Long userId = userDetails.getId();
+
+    TaskResponseDTO createdTask =
+            taskService.createTask(taskRequestDTO, userId);
+
+    return ApiResponse.success(
+            "Task created successfully",
+            createdTask
+    );
+}
 
     // GET ALL TASKS WITH PAGINATION, SORTING AND FILTERING
     @GetMapping
@@ -123,8 +126,12 @@ public class TaskController {
             @RequestParam(required = false) TaskPriority priority,
 
             @Parameter(description = "Search task titles using a keyword", example = "Java")
-            @RequestParam(required = false) String keyword) {
+           @RequestParam(required = false) String keyword,
+Authentication authentication) {
+CustomUserDetails userDetails =
+        (CustomUserDetails) authentication.getPrincipal();
 
+Long userId = userDetails.getId();
         if (page < 0) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -170,7 +177,7 @@ public class TaskController {
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Page<TaskResponseDTO> tasks = taskService.getFilteredTasks(
-                status,
+              userId,  status,
                 priority,
                 keyword,
                 pageable

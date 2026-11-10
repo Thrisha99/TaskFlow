@@ -1,7 +1,10 @@
 package com.taskflow.repository;
 
 import java.util.List;
+import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
@@ -13,6 +16,9 @@ public interface TaskRepository extends
         JpaSpecificationExecutor<Task> {
 List<Task> findByStatus(TaskStatus status);
 List<Task> findByPriority(TaskPriority priority);
+List<Task> findByUserId(Long userId);
+Page<Task> findByUserId(Long userId, Pageable pageable);
+Optional<Task> findByIdAndUserId(Long taskId, Long userId);
 List<Task> findByStatusAndPriority(
         TaskStatus status,
         TaskPriority priority
