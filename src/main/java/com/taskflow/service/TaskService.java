@@ -1,3 +1,4 @@
+
 package com.taskflow.service;
 
 import java.util.List;
@@ -19,148 +20,205 @@ import com.taskflow.mapper.TaskMapper;
 import com.taskflow.repository.TaskRepository;
 import com.taskflow.repository.UserRepository;
 import com.taskflow.specification.TaskSpecification;
+
 @Service
 public class TaskService {
 
     private final TaskRepository taskRepository;
-private final UserRepository userRepository;
+    private final UserRepository userRepository;
 
-public TaskService(
-        TaskRepository taskRepository,
-        UserRepository userRepository) {
+    public TaskService(
+            TaskRepository taskRepository,
+            UserRepository userRepository) {
 
-    this.taskRepository = taskRepository;
-    this.userRepository = userRepository;
-}
-    // FILTER TASKS BY STATUS
-public List<TaskResponseDTO> getTasksByStatus(TaskStatus status) {
-
-    return taskRepository.findByStatus(status)
-            .stream()
-            .map(TaskMapper::toResponseDTO)
-            .toList();
-}
-// FILTER TASKS BY STATUS AND PRIORITY
-public List<TaskResponseDTO> getTasksByStatusAndPriority(
-        TaskStatus status,
-        TaskPriority priority) {
-
-    return taskRepository.findByStatusAndPriority(status, priority)
-            .stream()
-            .map(TaskMapper::toResponseDTO)
-            .toList();
-}
-// SEARCH TASKS BY TITLE
-public List<TaskResponseDTO> searchTasksByTitle(String keyword) {
-
-    return taskRepository.findByTitleContainingIgnoreCase(keyword)
-            .stream()
-            .map(TaskMapper::toResponseDTO)
-            .toList();
-}
-// UNIFIED TASK FILTERING, SEARCH AND PAGINATION
-public Page<TaskResponseDTO> getFilteredTasks(
-        Long userId,
-        TaskStatus status,
-        TaskPriority priority,
-        String keyword,
-        Pageable pageable) {
-
-    if (keyword != null) {
-        keyword = keyword.trim();
+        this.taskRepository = taskRepository;
+        this.userRepository = userRepository;
     }
 
-    Specification<Task> spec =
-            Specification.where(TaskSpecification.hasStatus(status))
-                    .and(TaskSpecification.hasPriority(priority))
-                    .and(TaskSpecification.titleContains(keyword))
-                    .and((root, query, criteriaBuilder) ->
-                            criteriaBuilder.equal(
-                                    root.get("user").get("id"),
-                                    userId
-                            )
-                    );
+    // BUILD A SPECIFICATION THAT ALWAYS RESTRICTS TASKS TO ONE USER
+    private Specification<Task> buildTaskSpecification(
+            Long userId,
+            TaskStatus status,
+            TaskPriority priority,
+            String keyword) {
 
-    return taskRepository.findAll(spec, pageable)
-            .map(TaskMapper::toResponseDTO);
-}
+        if (userId == null) {
+            throw new IllegalArgumentException("User ID cannot be null");
+        }
+
+        if (keyword != null) {
+            keyword = keyword.trim();
+        }
+
+        return Specification
+                .where(TaskSpecification.hasStatus(status))
+                .and(TaskSpecification.hasPriority(priority))
+                .and(TaskSpecification.titleContains(keyword))
+                .and((root, query, criteriaBuilder) ->
+                        criteriaBuilder.equal(
+                                root.get("user").get("id"),
+                                userId
+                        )
+                );
+    }
+
+    // FILTER TASKS BY STATUS
+    public List<TaskResponseDTO> getTasksByStatus(
+            Long userId,
+            TaskStatus status) {
+
+        return taskRepository.findAll(
+                        buildTaskSpecification(userId, status, null, null)
+                )
+                .stream()
+                .map(TaskMapper::toResponseDTO)
+                .toList();
+    }
+
+    // FILTER TASKS BY STATUS AND PRIORITY
+    public List<TaskResponseDTO> getTasksByStatusAndPriority(
+            Long userId,
+            TaskStatus status,
+            TaskPriority priority) {
+
+        return taskRepository.findAll(
+                        buildTaskSpecification(
+                                userId, status, priority, null
+                        )
+                )
+                .stream()
+                .map(TaskMapper::toResponseDTO)
+                .toList();
+    }
+
+    // SEARCH TASKS BY TITLE
+    public List<TaskResponseDTO> searchTasksByTitle(
+            Long userId,
+            String keyword) {
+
+        return taskRepository.findAll(
+                        buildTaskSpecification(
+                                userId, null, null, keyword
+                        )
+                )
+                .stream()
+                .map(TaskMapper::toResponseDTO)
+                .toList();
+    }
+
+    // UNIFIED TASK FILTERING, SEARCH AND PAGINATION
+    public Page<TaskResponseDTO> getFilteredTasks(
+            Long userId,
+            TaskStatus status,
+            TaskPriority priority,
+            String keyword,
+            Pageable pageable) {
+
+        Specification<Task> spec =
+                buildTaskSpecification(
+                        userId, status, priority, keyword
+                );
+
+        return taskRepository.findAll(spec, pageable)
+                .map(TaskMapper::toResponseDTO);
+    }
+
     // CREATE TASK
-   // CREATE TASK
-public TaskResponseDTO createTask(
-        TaskRequestDTO request,
-        Long userId) {
+    public TaskResponseDTO createTask(
+            TaskRequestDTO request,
+            Long userId) {
 
-    // 1. Find the authenticated user
-    User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResponseStatusException(
-                    HttpStatus.NOT_FOUND, "User not found"));
-
-    // 2. Convert DTO into Task entity
-    Task task = TaskMapper.toEntity(request);
-
-    // 3. Assign the task owner
-    task.setUser(user);
-
-    // 4. Save task in database
-    Task savedTask = taskRepository.save(task);
-
-    // 5. Convert entity into response DTO
-    return TaskMapper.toResponseDTO(savedTask);
-}
-
-    // GET ALL TASKS
-// GET ALL TASKS BELONGING TO A USER
-public Page<TaskResponseDTO> getAllTasks(
-        Long userId,
-        Pageable pageable) {
-
-    return taskRepository.findByUserId(userId, pageable)
-            .map(TaskMapper::toResponseDTO);
-}
-
-    // GET TASK BY ID
-    public TaskResponseDTO getTaskById(Long id) {
-
-        Task task = taskRepository.findById(id)
+        // Find the authenticated user
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Task not found"));
+                        HttpStatus.NOT_FOUND,
+                        "User not found"
+                ));
+
+        // Convert request DTO into Task entity
+        Task task = TaskMapper.toEntity(request);
+
+        // Assign the task owner
+        task.setUser(user);
+
+        // Save task
+        Task savedTask = taskRepository.save(task);
+
+        return TaskMapper.toResponseDTO(savedTask);
+    }
+
+    // GET ALL TASKS BELONGING TO A USER WITH PAGINATION
+    public Page<TaskResponseDTO> getAllTasks(
+            Long userId,
+            Pageable pageable) {
+
+        return taskRepository.findByUserId(userId, pageable)
+                .map(TaskMapper::toResponseDTO);
+    }
+
+    // GET TASK BY ID - VERIFY OWNERSHIP
+    public TaskResponseDTO getTaskById(
+            Long id,
+            Long userId) {
+
+        Task task = taskRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Task not found"
+                ));
 
         return TaskMapper.toResponseDTO(task);
     }
 
-    // UPDATE TASK
-    public TaskResponseDTO updateTask(Long id, TaskRequestDTO request) {
+    // UPDATE TASK - VERIFY OWNERSHIP
+    public TaskResponseDTO updateTask(
+            Long id,
+            TaskRequestDTO request,
+            Long userId) {
 
-        Task existingTask = taskRepository.findById(id)
+        Task existingTask = taskRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Task not found"));
+                        HttpStatus.NOT_FOUND,
+                        "Task not found"
+                ));
 
         existingTask.setTitle(request.getTitle());
         existingTask.setDescription(request.getDescription());
         existingTask.setStatus(request.getStatus());
         existingTask.setPriority(request.getPriority());
 
+        // Do not change the existing task owner
         Task updatedTask = taskRepository.save(existingTask);
 
         return TaskMapper.toResponseDTO(updatedTask);
     }
 
-    // DELETE TASK
-    public void deleteTask(Long id) {
+    // DELETE TASK - VERIFY OWNERSHIP
+    public void deleteTask(
+            Long id,
+            Long userId) {
 
-        if (!taskRepository.existsById(id)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND, "Task not found");
-        }
+        Task task = taskRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Task not found"
+                ));
 
-        taskRepository.deleteById(id);
+        taskRepository.delete(task);
     }
-// FILTER TASKS BY PRIORITY
-public List<TaskResponseDTO> getTasksByPriority(TaskPriority priority) {
 
-    return taskRepository.findByPriority(priority)
-            .stream()
-            .map(TaskMapper::toResponseDTO)
-            .toList();
-}
+    // FILTER TASKS BY PRIORITY
+    public List<TaskResponseDTO> getTasksByPriority(
+            Long userId,
+            TaskPriority priority) {
+
+        return taskRepository.findAll(
+                        buildTaskSpecification(
+                                userId, null, priority, null
+                        )
+                )
+                .stream()
+                .map(TaskMapper::toResponseDTO)
+                .toList();
+    }
 }

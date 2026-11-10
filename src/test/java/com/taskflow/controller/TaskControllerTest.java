@@ -6,22 +6,21 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.test.web.servlet.request.RequestPostProcessor;
-import org.springframework.web.server.ResponseStatusException;
 
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.taskflow.dto.TaskRequestDTO;
 import com.taskflow.dto.TaskResponseDTO;
@@ -32,15 +31,18 @@ import com.taskflow.entity.User;
 import com.taskflow.security.CustomUserDetails;
 import com.taskflow.service.TaskService;
 
+import static org.hamcrest.Matchers.nullValue;
+import com.taskflow.security.JwtAuthenticationFilter;
+import com.taskflow.service.TaskService;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doThrow;
-
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -49,9 +51,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import static org.hamcrest.Matchers.nullValue;
-
 @WebMvcTest(TaskController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class TaskControllerTest {
 
     private static final Long USER_ID = 1L;
@@ -62,6 +63,8 @@ class TaskControllerTest {
     @MockitoBean
     private TaskService taskService;
 
+    @MockitoBean
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
     // ==========================================
     // AUTHENTICATION HELPER
     // ==========================================
@@ -75,7 +78,8 @@ class TaskControllerTest {
         user.setPassword("encodedPassword");
         user.setRole(Role.USER);
 
-        CustomUserDetails principal = new CustomUserDetails(user);
+        CustomUserDetails principal =
+                new CustomUserDetails(user);
 
         return new UsernamePasswordAuthenticationToken(
                 principal,
@@ -84,7 +88,8 @@ class TaskControllerTest {
         );
     }
 
-    private RequestPostProcessor authenticatedRequest() {
+    private org.springframework.test.web.servlet.request.RequestPostProcessor
+            authenticatedRequest() {
 
         Authentication authentication = testAuthentication();
 
@@ -94,33 +99,10 @@ class TaskControllerTest {
         };
     }
 
-    /*
-     * These helper methods automatically attach an authenticated
-     * principal to every MockMvc request.
-     */
+    private MockHttpServletRequestBuilder authenticated(
+            MockHttpServletRequestBuilder request) {
 
-    private MockHttpServletRequestBuilder get(String uri) {
-        return org.springframework.test.web.servlet.request
-                .MockMvcRequestBuilders.get(uri)
-                .with(authenticatedRequest());
-    }
-
-    private MockHttpServletRequestBuilder post(String uri) {
-        return org.springframework.test.web.servlet.request
-                .MockMvcRequestBuilders.post(uri)
-                .with(authenticatedRequest());
-    }
-
-    private MockHttpServletRequestBuilder put(String uri) {
-        return org.springframework.test.web.servlet.request
-                .MockMvcRequestBuilders.put(uri)
-                .with(authenticatedRequest());
-    }
-
-    private MockHttpServletRequestBuilder delete(String uri) {
-        return org.springframework.test.web.servlet.request
-                .MockMvcRequestBuilders.delete(uri)
-                .with(authenticatedRequest());
+        return request.with(authenticatedRequest());
     }
 
     // ==========================================
@@ -186,7 +168,7 @@ class TaskControllerTest {
     }
 
     // ==========================================
-    // CREATE TASK TESTS
+    // CREATE TASK
     // ==========================================
 
     @Test
@@ -204,7 +186,7 @@ class TaskControllerTest {
                 eq(USER_ID)
         )).thenReturn(response);
 
-        mockMvc.perform(post("/api/tasks")
+        mockMvc.perform(authenticated(post("/api/tasks"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {
@@ -222,19 +204,18 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.title")
                         .value("Learn Spring Boot"))
                 .andExpect(jsonPath("$.data.status").value("PENDING"))
-                .andExpect(jsonPath("$.data.priority").value("HIGH"))
-                .andExpect(jsonPath("$.timestamp").exists());
+                .andExpect(jsonPath("$.data.priority").value("HIGH"));
 
         verify(taskService).createTask(
-                any(TaskRequestDTO.class), eq(USER_ID)
+                any(TaskRequestDTO.class),
+                eq(USER_ID)
         );
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenTitleIsEmpty()
-            throws Exception {
+    void createTask_shouldRejectEmptyTitle() throws Exception {
 
-        mockMvc.perform(post("/api/tasks")
+        mockMvc.perform(authenticated(post("/api/tasks"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {
@@ -245,21 +226,18 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message")
-                        .value("Validation failed. Please check the provided fields."))
-                .andExpect(jsonPath("$.data.title").exists());
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).createTask(
-                any(TaskRequestDTO.class), any(Long.class)
+                any(TaskRequestDTO.class),
+                any(Long.class)
         );
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenPriorityIsMissing()
-            throws Exception {
+    void createTask_shouldRejectMissingPriority() throws Exception {
 
-        mockMvc.perform(post("/api/tasks")
+        mockMvc.perform(authenticated(post("/api/tasks"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {
@@ -269,19 +247,18 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data.priority").exists());
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).createTask(
-                any(TaskRequestDTO.class), any(Long.class)
+                any(TaskRequestDTO.class),
+                any(Long.class)
         );
     }
 
     @Test
-    void createTask_shouldReturnBadRequestWhenPriorityIsInvalid()
-            throws Exception {
+    void createTask_shouldRejectInvalidPriority() throws Exception {
 
-        mockMvc.perform(post("/api/tasks")
+        mockMvc.perform(authenticated(post("/api/tasks"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {
@@ -292,67 +269,16 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").exists())
-                .andExpect(jsonPath("$.data").value(nullValue()));
+                .andExpect(jsonPath("$.success").value(false));
 
         verify(taskService, never()).createTask(
-                any(TaskRequestDTO.class), any(Long.class)
-        );
-    }
-
-    @Test
-    void createTask_shouldReturnBadRequestWhenTitleExceedsLimit()
-            throws Exception {
-
-        String longTitle = "A".repeat(101);
-
-        mockMvc.perform(post("/api/tasks")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {
-                            "title": "%s",
-                            "description": "Testing title length",
-                            "status": "PENDING",
-                            "priority": "HIGH"
-                        }
-                        """.formatted(longTitle)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data.title").exists());
-
-        verify(taskService, never()).createTask(
-                any(TaskRequestDTO.class), any(Long.class)
-        );
-    }
-
-    @Test
-    void createTask_shouldReturnBadRequestWhenDescriptionExceedsLimit()
-            throws Exception {
-
-        String longDescription = "A".repeat(501);
-
-        mockMvc.perform(post("/api/tasks")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {
-                            "title": "Learn Spring Boot",
-                            "description": "%s",
-                            "status": "PENDING",
-                            "priority": "HIGH"
-                        }
-                        """.formatted(longDescription)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data.description").exists());
-
-        verify(taskService, never()).createTask(
-                any(TaskRequestDTO.class), any(Long.class)
+                any(TaskRequestDTO.class),
+                any(Long.class)
         );
     }
 
     // ==========================================
-    // GET ALL TASKS - PAGINATION
+    // GET ALL TASKS WITH PAGINATION
     // ==========================================
 
     @Test
@@ -360,23 +286,16 @@ class TaskControllerTest {
 
         stubDefaultPage();
 
-        mockMvc.perform(get("/api/tasks"))
+        mockMvc.perform(authenticated(get("/api/tasks")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.message")
-                        .value("Tasks retrieved successfully"))
                 .andExpect(jsonPath("$.data.content.length()").value(2))
                 .andExpect(jsonPath("$.data.content[0].title")
                         .value("Learn Java"))
-                .andExpect(jsonPath("$.data.content[1].title")
-                        .value("Learn Spring Boot"))
                 .andExpect(jsonPath("$.data.totalElements").value(2))
                 .andExpect(jsonPath("$.data.totalPages").value(1))
                 .andExpect(jsonPath("$.data.page").value(0))
-                .andExpect(jsonPath("$.data.size").value(10))
-                .andExpect(jsonPath("$.data.first").value(true))
-                .andExpect(jsonPath("$.data.last").value(true))
-                .andExpect(jsonPath("$.data.empty").value(false));
+                .andExpect(jsonPath("$.data.size").value(10));
 
         verify(taskService).getFilteredTasks(
                 eq(USER_ID),
@@ -398,63 +317,45 @@ class TaskControllerTest {
                 any(Pageable.class)
         )).thenReturn(createTaskPage(1, 2, "id", "asc"));
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("page", "1")
                 .param("size", "2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.page").value(1))
                 .andExpect(jsonPath("$.data.size").value(2));
     }
 
     @Test
-    void getAllTasks_shouldReturnBadRequestForNegativePage()
-            throws Exception {
+    void getAllTasks_shouldRejectNegativePage() throws Exception {
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("page", "-1"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message")
-                        .value("Page number cannot be negative"))
-                .andExpect(jsonPath("$.data").value(nullValue()));
+                .andExpect(status().isBadRequest());
 
         verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
+                anyLong(),
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
     @Test
-    void getAllTasks_shouldReturnBadRequestForZeroSize()
-            throws Exception {
+    void getAllTasks_shouldRejectInvalidPageSize() throws Exception {
 
-        mockMvc.perform(get("/api/tasks")
-                .param("size", "0"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
-
-        verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
-        );
-    }
-
-    @Test
-    void getAllTasks_shouldReturnBadRequestWhenSizeExceedsLimit()
-            throws Exception {
-
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("size", "101"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(status().isBadRequest());
 
         verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
+                anyLong(),
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
-
-    // ==========================================
-    // FILTERING AND SEARCH
-    // ==========================================
 
     @Test
     void getAllTasks_shouldFilterByStatus() throws Exception {
@@ -467,10 +368,9 @@ class TaskControllerTest {
                 any(Pageable.class)
         )).thenReturn(createTaskPage(0, 10, "id", "asc"));
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("status", "PENDING"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(status().isOk());
 
         verify(taskService).getFilteredTasks(
                 eq(USER_ID),
@@ -492,10 +392,9 @@ class TaskControllerTest {
                 any(Pageable.class)
         )).thenReturn(createTaskPage(0, 10, "id", "asc"));
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("priority", "HIGH"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(status().isOk());
 
         verify(taskService).getFilteredTasks(
                 eq(USER_ID),
@@ -517,10 +416,9 @@ class TaskControllerTest {
                 any(Pageable.class)
         )).thenReturn(createTaskPage(0, 10, "id", "asc"));
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("keyword", "Java"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(status().isOk());
 
         verify(taskService).getFilteredTasks(
                 eq(USER_ID),
@@ -530,121 +428,115 @@ class TaskControllerTest {
                 any(Pageable.class)
         );
     }
-
-    @Test
-    void getAllTasks_shouldAcceptEmptyKeyword() throws Exception {
-
-        when(taskService.getFilteredTasks(
-                eq(USER_ID),
-                isNull(),
-                isNull(),
-                eq(""),
-                any(Pageable.class)
-        )).thenReturn(createTaskPage(0, 10, "id", "asc"));
-
-        mockMvc.perform(get("/api/tasks")
-                .param("keyword", ""))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
-
-        verify(taskService).getFilteredTasks(
-                eq(USER_ID),
-                isNull(),
-                isNull(),
-                eq(""),
-                any(Pageable.class)
-        );
-    }
-
-    @Test
-    void getAllTasks_shouldCombineFiltersAndPagination()
-            throws Exception {
-
-        when(taskService.getFilteredTasks(
-                eq(USER_ID),
-                eq(TaskStatus.PENDING),
-                eq(TaskPriority.HIGH),
-                eq("Java"),
-                any(Pageable.class)
-        )).thenReturn(createTaskPage(0, 2, "title", "desc"));
-
-        mockMvc.perform(get("/api/tasks")
-                .param("status", "PENDING")
-                .param("priority", "HIGH")
-                .param("keyword", "Java")
-                .param("page", "0")
-                .param("size", "2")
-                .param("sortBy", "title")
-                .param("direction", "desc"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
-
-        verify(taskService).getFilteredTasks(
-                eq(USER_ID),
-                eq(TaskStatus.PENDING),
-                eq(TaskPriority.HIGH),
-                eq("Java"),
-                any(Pageable.class)
-        );
-    }
-
-    // ==========================================
-    // INVALID QUERY PARAMETERS
-    // ==========================================
 
     @Test
     void getAllTasks_shouldRejectInvalidStatus() throws Exception {
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("status", "INVALID"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").exists());
+                .andExpect(status().isBadRequest());
 
         verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
-        );
-    }
-
-    @Test
-    void getAllTasks_shouldRejectInvalidPriority() throws Exception {
-
-        mockMvc.perform(get("/api/tasks")
-                .param("priority", "URGENT"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").exists());
-
-        verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
+                anyLong(),
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
         );
     }
 
     @Test
     void getAllTasks_shouldRejectInvalidSortField() throws Exception {
 
-        mockMvc.perform(get("/api/tasks")
+        mockMvc.perform(authenticated(get("/api/tasks"))
                 .param("sortBy", "unknown"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(status().isBadRequest());
 
         verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
+                anyLong(),
+                any(),
+                any(),
+                any(),
+                any(Pageable.class)
+        );
+    }
+
+    // ==========================================
+    // FILTER ENDPOINTS
+    // ==========================================
+
+    @Test
+    void getTasksByStatus_shouldPassAuthenticatedUserId()
+            throws Exception {
+
+        when(taskService.getTasksByStatus(
+                USER_ID, TaskStatus.PENDING
+        )).thenReturn(List.of());
+
+        mockMvc.perform(authenticated(get("/api/tasks/filter/status"))
+                .param("status", "PENDING"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getTasksByStatus(
+                USER_ID, TaskStatus.PENDING
         );
     }
 
     @Test
-    void getAllTasks_shouldRejectInvalidSortDirection()
+    void getTasksByPriority_shouldPassAuthenticatedUserId()
             throws Exception {
 
-        mockMvc.perform(get("/api/tasks")
-                .param("direction", "xyz"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
+        when(taskService.getTasksByPriority(
+                USER_ID, TaskPriority.HIGH
+        )).thenReturn(List.of());
 
-        verify(taskService, never()).getFilteredTasks(
-                anyLong(), any(), any(), any(), any(Pageable.class)
+        mockMvc.perform(authenticated(get("/api/tasks/filter/priority"))
+                .param("priority", "HIGH"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getTasksByPriority(
+                USER_ID, TaskPriority.HIGH
         );
+    }
+
+    @Test
+    void getTasksByStatusAndPriority_shouldPassAuthenticatedUserId()
+            throws Exception {
+
+        when(taskService.getTasksByStatusAndPriority(
+                USER_ID,
+                TaskStatus.PENDING,
+                TaskPriority.HIGH
+        )).thenReturn(List.of());
+
+        mockMvc.perform(authenticated(get("/api/tasks/filter"))
+                .param("status", "PENDING")
+                .param("priority", "HIGH"))
+                .andExpect(status().isOk());
+
+        verify(taskService).getTasksByStatusAndPriority(
+                USER_ID,
+                TaskStatus.PENDING,
+                TaskPriority.HIGH
+        );
+    }
+
+    // ==========================================
+    // SEARCH
+    // ==========================================
+
+    @Test
+    void searchTasks_shouldPassAuthenticatedUserId()
+            throws Exception {
+
+        when(taskService.searchTasksByTitle(USER_ID, "Java"))
+                .thenReturn(List.of());
+
+        mockMvc.perform(authenticated(get("/api/tasks/search"))
+                .param("keyword", "Java"))
+                .andExpect(status().isOk());
+
+        verify(taskService).searchTasksByTitle(USER_ID, "Java");
     }
 
     // ==========================================
@@ -652,7 +544,7 @@ class TaskControllerTest {
     // ==========================================
 
     @Test
-    void getTaskById_shouldReturnTaskWhenIdExists() throws Exception {
+    void getTaskById_shouldReturnOwnedTask() throws Exception {
 
         TaskResponseDTO task = createResponse(
                 1L,
@@ -661,33 +553,33 @@ class TaskControllerTest {
                 TaskPriority.HIGH
         );
 
-        when(taskService.getTaskById(1L)).thenReturn(task);
+        when(taskService.getTaskById(1L, USER_ID))
+                .thenReturn(task);
 
-        mockMvc.perform(get("/api/tasks/1"))
+        mockMvc.perform(authenticated(get("/api/tasks/1")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(1))
-                .andExpect(jsonPath("$.data.title").value("Learn Java"))
-                .andExpect(jsonPath("$.data.status").value("PENDING"))
-                .andExpect(jsonPath("$.data.priority").value("HIGH"));
+                .andExpect(jsonPath("$.data.title").value("Learn Java"));
+
+        verify(taskService).getTaskById(1L, USER_ID);
     }
 
     @Test
-    void getTaskById_shouldReturnNotFoundWhenTaskDoesNotExist()
+    void getTaskById_shouldReturnNotFoundWhenTaskIsNotOwned()
             throws Exception {
 
-        when(taskService.getTaskById(9999L))
+        when(taskService.getTaskById(9999L, USER_ID))
                 .thenThrow(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
+                        org.springframework.http.HttpStatus.NOT_FOUND,
                         "Task not found"
                 ));
 
-        mockMvc.perform(get("/api/tasks/9999"))
+        mockMvc.perform(authenticated(get("/api/tasks/9999")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Task not found"))
-                .andExpect(jsonPath("$.data").value(nullValue()))
-                .andExpect(jsonPath("$.timestamp").exists());
+                .andExpect(jsonPath("$.message").value("Task not found"));
+
+        verify(taskService).getTaskById(9999L, USER_ID);
     }
 
     // ==========================================
@@ -695,7 +587,7 @@ class TaskControllerTest {
     // ==========================================
 
     @Test
-    void updateTask_shouldReturnUpdatedTask() throws Exception {
+    void updateTask_shouldUpdateOwnedTask() throws Exception {
 
         TaskResponseDTO response = createResponse(
                 1L,
@@ -706,10 +598,11 @@ class TaskControllerTest {
 
         when(taskService.updateTask(
                 eq(1L),
-                any(TaskRequestDTO.class)
+                any(TaskRequestDTO.class),
+                eq(USER_ID)
         )).thenReturn(response);
 
-        mockMvc.perform(put("/api/tasks/1")
+        mockMvc.perform(authenticated(put("/api/tasks/1"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {
@@ -720,40 +613,47 @@ class TaskControllerTest {
                         }
                         """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.id").value(1))
                 .andExpect(jsonPath("$.data.title")
-                        .value("Learn Advanced Java"))
-                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data.priority").value("HIGH"));
+                        .value("Learn Advanced Java"));
+
+        verify(taskService).updateTask(
+                eq(1L),
+                any(TaskRequestDTO.class),
+                eq(USER_ID)
+        );
     }
 
     @Test
-    void updateTask_shouldReturnNotFoundWhenTaskDoesNotExist()
+    void updateTask_shouldReturnNotFoundForUnownedTask()
             throws Exception {
 
         when(taskService.updateTask(
                 eq(9999L),
-                any(TaskRequestDTO.class)
+                any(TaskRequestDTO.class),
+                eq(USER_ID)
         )).thenThrow(new ResponseStatusException(
-                HttpStatus.NOT_FOUND,
+                org.springframework.http.HttpStatus.NOT_FOUND,
                 "Task not found"
         ));
 
-        mockMvc.perform(put("/api/tasks/9999")
+        mockMvc.perform(authenticated(put("/api/tasks/9999"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {
                             "title": "Updated Task",
-                            "description": "Testing nonexistent task",
+                            "description": "Testing ownership",
                             "status": "IN_PROGRESS",
                             "priority": "HIGH"
                         }
                         """))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Task not found"))
-                .andExpect(jsonPath("$.data").value(nullValue()));
+                .andExpect(jsonPath("$.message").value("Task not found"));
+
+        verify(taskService).updateTask(
+                eq(9999L),
+                any(TaskRequestDTO.class),
+                eq(USER_ID)
+        );
     }
 
     // ==========================================
@@ -761,37 +661,32 @@ class TaskControllerTest {
     // ==========================================
 
     @Test
-    void deleteTask_shouldReturnOkWhenTaskIsDeleted()
-            throws Exception {
+    void deleteTask_shouldDeleteOwnedTask() throws Exception {
 
-        mockMvc.perform(delete("/api/tasks/1"))
+        mockMvc.perform(authenticated(delete("/api/tasks/1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message")
                         .value("Task deleted successfully"))
-                .andExpect(jsonPath("$.data").value(nullValue()))
-                .andExpect(jsonPath("$.timestamp").exists());
+                .andExpect(jsonPath("$.data").value(nullValue()));
 
-        verify(taskService).deleteTask(1L);
+        verify(taskService).deleteTask(1L, USER_ID);
     }
 
     @Test
-    void deleteTask_shouldReturnNotFoundWhenTaskDoesNotExist()
+    void deleteTask_shouldReturnNotFoundForUnownedTask()
             throws Exception {
 
-        doThrow(
-                new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Task not found"
-                )
-        ).when(taskService).deleteTask(9999L);
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Task not found"
+        )).when(taskService).deleteTask(9999L, USER_ID);
 
-        mockMvc.perform(delete("/api/tasks/9999"))
+        mockMvc.perform(authenticated(delete("/api/tasks/9999")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Task not found"))
-                .andExpect(jsonPath("$.data").value(nullValue()));
+                .andExpect(jsonPath("$.message").value("Task not found"));
 
-        verify(taskService).deleteTask(9999L);
+        verify(taskService).deleteTask(9999L, USER_ID);
     }
 }

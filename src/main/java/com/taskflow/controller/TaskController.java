@@ -36,71 +36,96 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/tasks")
 @Tag(
-    name = "Task Management",
-    description = "APIs for creating, retrieving, updating, deleting, filtering and searching tasks."
+        name = "Task Management",
+        description = "APIs for creating, retrieving, updating, deleting, filtering and searching tasks."
 )
 public class TaskController {
 
     private final TaskService taskService;
+
     public TaskController(TaskService taskService) {
         this.taskService = taskService;
+    }
+
+    // EXTRACT AUTHENTICATED USER ID
+    private Long getAuthenticatedUserId(Authentication authentication) {
+
+        if (authentication == null
+                || !(authentication.getPrincipal() instanceof CustomUserDetails userDetails)) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "User is not authenticated"
+            );
+        }
+
+        return userDetails.getId();
     }
 
     // CREATE TASK
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(
-        summary = "Create a new task",
-        description = "Creates a task using the provided title, description, status and priority."
+            summary = "Create a new task",
+            description = "Creates a task using the provided title, description, status and priority. The authenticated user becomes the owner."
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "201",
-            description = "Task created successfully"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400",
-            description = "Invalid task details or validation failure"
-        )
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "201",
+                    description = "Task created successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid task details or validation failure"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "User is not authenticated"
+            )
     })
-   // CREATE TASK
+    public ApiResponse<TaskResponseDTO> createTask(
+            @Valid
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Task details required to create a new task",
+                    required = true
+            )
+            @RequestBody TaskRequestDTO taskRequestDTO,
+            Authentication authentication) {
 
-public ApiResponse<TaskResponseDTO> createTask(
-        @Valid @RequestBody TaskRequestDTO taskRequestDTO,
-        Authentication authentication) {
+        Long userId = getAuthenticatedUserId(authentication);
 
-    CustomUserDetails userDetails =
-            (CustomUserDetails) authentication.getPrincipal();
+        TaskResponseDTO createdTask =
+                taskService.createTask(taskRequestDTO, userId);
 
-    Long userId = userDetails.getId();
+        return ApiResponse.success(
+                "Task created successfully",
+                createdTask
+        );
+    }
 
-    TaskResponseDTO createdTask =
-            taskService.createTask(taskRequestDTO, userId);
-
-    return ApiResponse.success(
-            "Task created successfully",
-            createdTask
-    );
-}
-
-    // GET ALL TASKS WITH PAGINATION, SORTING AND FILTERING
+    // GET TASKS WITH PAGINATION, SORTING AND FILTERING
     @GetMapping
     @Operation(
-        summary = "Get tasks with pagination and filters",
-        description = "Retrieves tasks using pagination, sorting, status filtering, priority filtering and case-insensitive title keyword search. All filters are optional."
+            summary = "Get tasks with pagination and filters",
+            description = "Retrieves only the authenticated user's tasks using pagination, sorting, status filtering, priority filtering and case-insensitive title keyword search."
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "200",
-            description = "Tasks retrieved successfully"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400",
-            description = "Invalid pagination, sorting or filter parameter"
-        )
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Tasks retrieved successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid pagination, sorting or filter parameter"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "User is not authenticated"
+            )
     })
     public ApiResponse<PageResponse<TaskResponseDTO>> getAllTasks(
 
@@ -111,8 +136,8 @@ public ApiResponse<TaskResponseDTO> createTask(
             @RequestParam(defaultValue = "10") int size,
 
             @Parameter(
-                description = "Field used to sort tasks. Allowed: id, title, description, status, priority",
-                example = "title"
+                    description = "Field used to sort tasks. Allowed: id, title, description, status, priority",
+                    example = "title"
             )
             @RequestParam(defaultValue = "id") String sortBy,
 
@@ -126,12 +151,12 @@ public ApiResponse<TaskResponseDTO> createTask(
             @RequestParam(required = false) TaskPriority priority,
 
             @Parameter(description = "Search task titles using a keyword", example = "Java")
-           @RequestParam(required = false) String keyword,
-Authentication authentication) {
-CustomUserDetails userDetails =
-        (CustomUserDetails) authentication.getPrincipal();
+            @RequestParam(required = false) String keyword,
 
-Long userId = userDetails.getId();
+            Authentication authentication) {
+
+        Long userId = getAuthenticatedUserId(authentication);
+
         if (page < 0) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -177,7 +202,8 @@ Long userId = userDetails.getId();
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Page<TaskResponseDTO> tasks = taskService.getFilteredTasks(
-              userId,  status,
+                userId,
+                status,
                 priority,
                 keyword,
                 pageable
@@ -195,15 +221,18 @@ Long userId = userDetails.getId();
     // FILTER TASKS BY STATUS
     @GetMapping("/filter/status")
     @Operation(
-        summary = "Filter tasks by status",
-        description = "Retrieves all tasks matching the specified status."
+            summary = "Filter tasks by status",
+            description = "Retrieves the authenticated user's tasks matching the specified status."
     )
     public ApiResponse<List<TaskResponseDTO>> getTasksByStatus(
             @Parameter(description = "Task status", example = "PENDING")
-            @RequestParam TaskStatus status) {
+            @RequestParam TaskStatus status,
+            Authentication authentication) {
+
+        Long userId = getAuthenticatedUserId(authentication);
 
         List<TaskResponseDTO> tasks =
-                taskService.getTasksByStatus(status);
+                taskService.getTasksByStatus(userId, status);
 
         return ApiResponse.success(
                 "Tasks filtered by status successfully",
@@ -214,15 +243,18 @@ Long userId = userDetails.getId();
     // FILTER TASKS BY PRIORITY
     @GetMapping("/filter/priority")
     @Operation(
-        summary = "Filter tasks by priority",
-        description = "Retrieves all tasks matching the specified priority."
+            summary = "Filter tasks by priority",
+            description = "Retrieves the authenticated user's tasks matching the specified priority."
     )
     public ApiResponse<List<TaskResponseDTO>> getTasksByPriority(
             @Parameter(description = "Task priority", example = "HIGH")
-            @RequestParam TaskPriority priority) {
+            @RequestParam TaskPriority priority,
+            Authentication authentication) {
+
+        Long userId = getAuthenticatedUserId(authentication);
 
         List<TaskResponseDTO> tasks =
-                taskService.getTasksByPriority(priority);
+                taskService.getTasksByPriority(userId, priority);
 
         return ApiResponse.success(
                 "Tasks filtered by priority successfully",
@@ -233,18 +265,26 @@ Long userId = userDetails.getId();
     // FILTER TASKS BY STATUS AND PRIORITY
     @GetMapping("/filter")
     @Operation(
-        summary = "Filter tasks by status and priority",
-        description = "Retrieves tasks that match both the specified status and priority."
+            summary = "Filter tasks by status and priority",
+            description = "Retrieves the authenticated user's tasks matching both the specified status and priority."
     )
     public ApiResponse<List<TaskResponseDTO>> getTasksByStatusAndPriority(
             @Parameter(description = "Task status", example = "PENDING")
             @RequestParam TaskStatus status,
 
             @Parameter(description = "Task priority", example = "HIGH")
-            @RequestParam TaskPriority priority) {
+            @RequestParam TaskPriority priority,
+
+            Authentication authentication) {
+
+        Long userId = getAuthenticatedUserId(authentication);
 
         List<TaskResponseDTO> tasks =
-                taskService.getTasksByStatusAndPriority(status, priority);
+                taskService.getTasksByStatusAndPriority(
+                        userId,
+                        status,
+                        priority
+                );
 
         return ApiResponse.success(
                 "Tasks filtered successfully",
@@ -255,24 +295,32 @@ Long userId = userDetails.getId();
     // GET TASK BY ID
     @GetMapping("/{id}")
     @Operation(
-        summary = "Get task by ID",
-        description = "Retrieves a specific task using its unique ID."
+            summary = "Get task by ID",
+            description = "Retrieves a specific task only if it belongs to the authenticated user."
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "200",
-            description = "Task retrieved successfully"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "Task not found"
-        )
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Task retrieved successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "Task not found"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "User is not authenticated"
+            )
     })
     public ApiResponse<TaskResponseDTO> getTaskById(
             @Parameter(description = "Unique ID of the task", example = "1")
-            @PathVariable Long id) {
+            @PathVariable Long id,
+            Authentication authentication) {
 
-        TaskResponseDTO task = taskService.getTaskById(id);
+        Long userId = getAuthenticatedUserId(authentication);
+
+        TaskResponseDTO task =
+                taskService.getTaskById(id, userId);
 
         return ApiResponse.success(
                 "Task retrieved successfully",
@@ -283,15 +331,18 @@ Long userId = userDetails.getId();
     // SEARCH TASKS BY TITLE
     @GetMapping("/search")
     @Operation(
-        summary = "Search tasks by title",
-        description = "Searches task titles using the provided keyword."
+            summary = "Search tasks by title",
+            description = "Searches only the authenticated user's tasks using the provided keyword."
     )
     public ApiResponse<List<TaskResponseDTO>> searchTasks(
             @Parameter(description = "Keyword to search in task titles", example = "Java")
-            @RequestParam String keyword) {
+            @RequestParam String keyword,
+            Authentication authentication) {
+
+        Long userId = getAuthenticatedUserId(authentication);
 
         List<TaskResponseDTO> tasks =
-                taskService.searchTasksByTitle(keyword);
+                taskService.searchTasksByTitle(userId, keyword);
 
         return ApiResponse.success(
                 "Task search completed successfully",
@@ -302,22 +353,26 @@ Long userId = userDetails.getId();
     // UPDATE TASK
     @PutMapping("/{id}")
     @Operation(
-        summary = "Update an existing task",
-        description = "Updates the details of an existing task using its ID."
+            summary = "Update an existing task",
+            description = "Updates a task only if it belongs to the authenticated user."
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "200",
-            description = "Task updated successfully"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400",
-            description = "Invalid task details"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "Task not found"
-        )
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Task updated successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid task details"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "Task not found"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "User is not authenticated"
+            )
     })
     public ApiResponse<TaskResponseDTO> updateTask(
             @Parameter(description = "Unique ID of the task to update", example = "1")
@@ -325,13 +380,17 @@ Long userId = userDetails.getId();
 
             @Valid
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                description = "Updated task details",
-                required = true
+                    description = "Updated task details",
+                    required = true
             )
-            @RequestBody TaskRequestDTO updatedTask) {
+            @RequestBody TaskRequestDTO updatedTask,
+
+            Authentication authentication) {
+
+        Long userId = getAuthenticatedUserId(authentication);
 
         TaskResponseDTO task =
-                taskService.updateTask(id, updatedTask);
+                taskService.updateTask(id, updatedTask, userId);
 
         return ApiResponse.success(
                 "Task updated successfully",
@@ -342,24 +401,31 @@ Long userId = userDetails.getId();
     // DELETE TASK
     @DeleteMapping("/{id}")
     @Operation(
-        summary = "Delete a task",
-        description = "Deletes a task permanently using its unique ID."
+            summary = "Delete a task",
+            description = "Deletes a task only if it belongs to the authenticated user."
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "200",
-            description = "Task deleted successfully"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "Task not found"
-        )
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Task deleted successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "Task not found"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "User is not authenticated"
+            )
     })
     public ResponseEntity<ApiResponse<Void>> deleteTask(
             @Parameter(description = "Unique ID of the task to delete", example = "1")
-            @PathVariable Long id) {
+            @PathVariable Long id,
+            Authentication authentication) {
 
-        taskService.deleteTask(id);
+        Long userId = getAuthenticatedUserId(authentication);
+
+        taskService.deleteTask(id, userId);
 
         return ResponseEntity.ok(
                 ApiResponse.success(
