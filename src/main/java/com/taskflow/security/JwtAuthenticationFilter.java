@@ -1,3 +1,4 @@
+
 package com.taskflow.security;
 
 import java.io.IOException;
@@ -5,6 +6,7 @@ import java.io.IOException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -48,8 +50,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String email = jwtService.extractUsername(jwt);
 
-            if (email != null &&
-                    SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (email != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null) {
 
                 UserDetails userDetails =
                         userDetailsService.loadUserByUsername(email);
@@ -74,7 +76,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
 
-        } catch (JwtException | IllegalArgumentException ex) {
+        } catch (JwtException
+                | IllegalArgumentException
+                | UsernameNotFoundException ex) {
+
+            // Invalid, expired or unrecognised-user tokens
+            // must not leave an authenticated security context.
             SecurityContextHolder.clearContext();
         }
 

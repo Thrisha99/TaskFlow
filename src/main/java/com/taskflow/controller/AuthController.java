@@ -26,6 +26,8 @@ public class AuthController {
         this.authService = authService;
     }
 
+    // Website and Windows desktop registration.
+    // The user must log in separately after registration.
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
             @Valid @RequestBody RegisterRequest request) {
@@ -34,21 +36,38 @@ public class AuthController {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(
-                    "Registration successful",
-                    response
+                        "Registration successful. Please log in.",
+                        response
                 ));
     }
+
+    // Mobile registration.
+    // A JWT is returned immediately after successful registration.
+    @PostMapping("/register/mobile")
+    public ResponseEntity<ApiResponse<AuthResponse>> registerMobile(
+            @Valid @RequestBody RegisterRequest request) {
+
+        AuthResponse response = authService.registerMobile(request);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        "Registration successful. You are now logged in.",
+                        response
+                ));
+    }
+
+    // Login for website, desktop and mobile clients.
     @PostMapping("/login")
-public ResponseEntity<ApiResponse<AuthResponse>> login(
-        @Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<ApiResponse<AuthResponse>> login(
+            @Valid @RequestBody LoginRequest request) {
 
-    AuthResponse response = authService.login(request);
+        AuthResponse response = authService.login(request);
 
-    return ResponseEntity.ok(
-            ApiResponse.success(
-                    "Login successful",
-                    response
-            )
-    );
-}
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Login successful",
+                        response
+                )
+        );
+    }
 }
